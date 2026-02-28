@@ -1,0 +1,312 @@
+@xlia< system , 1.0 >:
+
+system DAB_Banque_System {
+
+@composite:
+    statemachine DAB {
+
+    @public:
+        // Canaux Utilisateur (CCin)
+        port input InsererCarte(integer);
+        port input SaisirCode(integer);
+        port input SaisirMontant(integer);
+        port input Annuler;
+
+        // Canaux Utilisateur (Cout)
+        port output DemanderCode;
+        port output DemanderMontant;
+        port output Billets(integer);
+        port output Recu(integer);
+        port output EjecterCarte;
+        port output AvalerCarte;
+        port output ErreurCode(integer);
+        port output FondsInsuffisants;
+        port output Temporisation;
+        port output ErreurBanque;
+
+        // Canaux partagés avec la Banque
+        port output DemandeAuth(integer);
+        port input ReponseAuth(boolean, integer, integer);
+        port output DemandeRetrait(integer, integer);
+        port input ReponseRetrait(boolean);
+
+    @private:
+        // Variables de données
+        var integer numCarte;
+        var integer code;
+        var integer codeStocke;
+        var integer montant;
+        var integer solde;
+        var integer essais = 3;
+        var boolean valide;
+        var boolean autorise;
+
+        // Horloges
+        var clock urational hUtil;
+        var clock urational hBanque;
+
+    @region:
+        state< start > Repos {
+            transition tr1 --> AttenteAuth {
+                input InsererCarte(numCarte);
+                essais = 3;
+                hUtil = 0;
+                hBanque = 0;
+            }
+        }
+
+        state AttenteAuth {
+            transition tr2 --> AttenteCode {
+                input ReponseAuth(valide, codeStocke, solde);
+                guard(valide);
+                tguard(hBanque < 30);
+                hUtil = 0;
+                output DemanderCode;
+            }
+            transition tr3 --> Ejection {
+                input ReponseAuth(valide, codeStocke, solde);
+                guard(!valide);
+                tguard(hBanque < 30);
+                output EjecterCarte;
+            }
+            transition tr14a --> Ejection {
+                tguard(hBanque >= 30 && hBanque < 31);
+                output ErreurBanque;
+                output EjecterCarte;
+            }
+        }
+
+        state AttenteCode {
+            transition tr4 --> VerifCode {
+                input SaisirCode(code);
+                tguard(hUtil < 60);
+            }
+            transition tr13a --> Ejection {
+                tguard(hUtil >= 60 && hUtil < 61);
+                output Temporisation;
+                output EjecterCarte;
+            }
+            transition tr16a --> Ejection {
+                input Annuler;
+                tguard(hUtil < 60);
+                output EjecterCarte;
+            }
+        }
+
+        state VerifCode {
+            transition tr5 --> Authentifie {
+                guard(code == codeStocke);
+                hUtil = 0;
+                output DemanderMontant;
+            }
+            transition tr6 --> AttenteCode {
+                guard(code != codeStocke && essais > 1);
+                essais = essais - 1;
+                hUtil = 0;
+                output ErreurCode(essais);
+            }
+            transition tr7 --> CarteAvalee {
+                guard(code != codeStocke && essais == 1);
+                output AvalerCarte;
+            }
+        }
+
+        state Authentifie {
+            transition auto_goto_montant --> AttenteMontant {
+                // État de passage direct modélisé pour rejoindre AttenteMontant logiquement
+            }
+        }
+
+        state AttenteMontant {
+            transition tr9 --> AttenteRetrait {
+                input SaisirMontant(montant);
+                guard(montant > 0);
+                tguard(hUtil < 60);
+                hBanque = 0;
+                output DemandeRetrait(numCarte, montant);
+            }
+            transition tr13b --> Ejection {
+                tguard(hUtil >= 60 && hUtil < 61);
+                output Temporisation;
+                output EjecterCarte;
+            }
+            transition tr16b --> Ejection {
+                input Annuler;
+                tguard(hUtil < 60);
+                output EjecterCarte;
+            }
+        }
+
+        state AttenteRetrait {
+            transition tr10 --> Distribution {
+                input ReponseRetrait(autorise);
+                guard(autorise);
+                tguard(hBanque < 30);
+                solde = solde - montant;
+            }
+            transition tr12 --> AttenteMontant {
+                input ReponseRetrait(autorise);
+                guard(!autorise);
+                tguard(hBanque < 30);
+                output FondsInsuffisants;
+                output DemanderMontant;
+            }
+            transition tr14b --> Ejection {
+                tguard(hBanque >= 30 && hBanque < 31);
+                output ErreurBanque;
+                output EjecterCarte;
+            }
+        }
+
+        state Distribution {
+            transition tr11 --> Ejection {
+                output Billets(montant);
+                output Recu(solde);
+                output EjecterCarte;
+            }
+        }
+
+        state Ejection {
+            transition tr17a --> Repos {
+                // Retour à l'état initial
+            }
+        }
+
+        state CarteAvalee {
+            transition tr17b --> Repos {
+                // Retour à l'état initial
+            }
+        }
+    }
+
+    statemachine Banque {
+
+    @public:
+        // Canaux partagés (entrées pour la Banque)
+        port input DemandeAuth(integer);
+        port input DemandeRetrait(integer, integer);
+
+        // Canaux partagés (sorties pour la Banque)
+        port output ReponseAuth(boolean, integer, integer);
+        port output ReponseRetrait(boolean);
+
+    @private:
+        var integer numCarte;
+        var integer codeStocke;
+        var integer solde;
+        var integer montant;
+        var integer numC;
+        
+        // Simulation de la base "comptes" pour le solveur
+        const integer COMPTE_VALIDE = 1234;
+        const integer CODE_SECRET = 0000;
+        const integer SOLDE_INIT = 500;
+
+        // Horloge
+        var clock urational hTraitement;
+
+    @region:
+        state< start > BRepos {
+            transition btr1 --> Verification {
+                input DemandeAuth(numCarte);
+                hTraitement = 0;
+            }
+        }
+
+        state Verification {
+            transition btr2 --> BPret {
+                guard(numCarte == COMPTE_VALIDE);
+                tguard(hTraitement < 10);
+                codeStocke = CODE_SECRET;
+                solde = SOLDE_INIT;
+                output ReponseAuth(true, codeStocke, solde);
+            }
+            transition btr3 --> BRepos {
+                guard(numCarte != COMPTE_VALIDE);
+                tguard(hTraitement < 10);
+                output ReponseAuth(false, 0, 0);
+            }
+            transition btr8a --> BErreur {
+                tguard(hTraitement >= 10);
+            }
+        }
+
+        state BPret {
+            transition btr4 --> Traitement {
+                input DemandeRetrait(numC, montant);
+                hTraitement = 0;
+            }
+            transition btr7 --> BRepos {
+                // Fin de session, temporisation sans requête
+                tguard(hTraitement == 50); 
+            }
+        }
+
+        state Traitement {
+            transition btr5 --> BRepos {
+                guard(montant <= solde);
+                tguard(hTraitement < 10);
+                solde = solde - montant;
+                output ReponseRetrait(true);
+            }
+            transition btr6 --> BPret {
+                guard(montant > solde);
+                tguard(hTraitement < 10);
+                output ReponseRetrait(false);
+            }
+            transition btr8b --> BErreur {
+                tguard(hTraitement >= 10);
+            }
+        }
+
+        state BErreur {
+            transition btr8c --> BRepos {
+                // Retour après erreur interne
+            }
+        }
+    }
+
+@moe:
+    @schedule
+    {| interleaving | run DAB; run Banque; }
+
+@com:
+    // Synchronisation par rendez-vous (DAB <-> Banque)
+    connect< rdv > {
+        output DAB->DemandeAuth;
+        input Banque->DemandeAuth;
+    }
+    connect< rdv > {
+        output Banque->ReponseAuth;
+        input DAB->ReponseAuth;
+    }
+    connect< rdv > {
+        output DAB->DemandeRetrait;
+        input Banque->DemandeRetrait;
+    }
+    connect< rdv > {
+        output Banque->ReponseRetrait;
+        input DAB->ReponseRetrait;
+    }
+
+    // Interaction avec l'Utilisateur (Environnement)
+    connect< env > {
+        // Entrées contrôlables
+        input DAB->InsererCarte;
+        input DAB->SaisirCode;
+        input DAB->SaisirMontant;
+        input DAB->Annuler;
+
+        // Sorties observables
+        output DAB->DemanderCode;
+        output DAB->DemanderMontant;
+        output DAB->Billets;
+        output DAB->Recu;
+        output DAB->EjecterCarte;
+        output DAB->AvalerCarte;
+        output DAB->ErreurCode;
+        output DAB->FondsInsuffisants;
+        output DAB->Temporisation;
+        output DAB->ErreurBanque;
+    }
+}
