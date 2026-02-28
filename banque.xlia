@@ -1,0 +1,92 @@
+@xlia< system , 1.0 >:
+
+system ServeurBanque {
+
+@composite:
+    statemachine Banque {
+
+    @public:
+        // Canaux partagés (entrées pour la Banque)
+        port input DemandeAuth(integer);
+        port input DemandeRetrait(integer, integer);
+
+        // Canaux partagés (sorties pour la Banque)
+        port output ReponseAuth(boolean, integer, integer);
+        port output ReponseRetrait(boolean);
+
+    @private:
+        var integer numCarte;
+        var integer codeStocke;
+        var integer solde;
+        var integer montant;
+        var integer numC;
+        
+        // Simulation de la base "comptes" pour le solveur
+        const integer COMPTE_VALIDE = 1234;
+        const integer CODE_SECRET = 0000;
+        const integer SOLDE_INIT = 500;
+
+        // Horloge
+        var clock urational hTraitement;
+
+    @region:
+        state< start > BRepos {
+            transition btr1 --> Verification {
+                input DemandeAuth(numCarte);
+                hTraitement = 0;
+            }
+        }
+
+        state Verification {
+            transition btr2 --> BPret {
+                guard(numCarte == COMPTE_VALIDE);
+                tguard(hTraitement < 10);
+                codeStocke = CODE_SECRET;
+                solde = SOLDE_INIT;
+                output ReponseAuth(true, codeStocke, solde);
+            }
+            transition btr3 --> BRepos {
+                guard(numCarte != COMPTE_VALIDE);
+                tguard(hTraitement < 10);
+                output ReponseAuth(false, 0, 0);
+            }
+            transition btr8a --> BErreur {
+                tguard(hTraitement >= 10);
+            }
+        }
+
+        state BPret {
+            transition btr4 --> Traitement {
+                input DemandeRetrait(numC, montant);
+                hTraitement = 0;
+            }
+            transition btr7 --> BRepos {
+                // Fin de session, temporisation sans requête
+                tguard(hTraitement == 50); 
+            }
+        }
+
+        state Traitement {
+            transition btr5 --> BRepos {
+                guard(montant <= solde);
+                tguard(hTraitement < 10);
+                solde = solde - montant;
+                output ReponseRetrait(true);
+            }
+            transition btr6 --> BPret {
+                guard(montant > solde);
+                tguard(hTraitement < 10);
+                output ReponseRetrait(false);
+            }
+            transition btr8b --> BErreur {
+                tguard(hTraitement >= 10);
+            }
+        }
+
+        state BErreur {
+            transition btr8c --> BRepos {
+                // Retour après erreur interne
+            }
+        }
+    }
+}

@@ -1,0 +1,57 @@
+@xlia< system , 1.0 >:
+
+// Inclusion des modèles
+// #include "dab.xlia"
+// #include "banque.xlia"
+
+system DAB_Banque_System {
+
+@composite:
+    // Instanciation des machines
+    machine AutomateDAB;
+    machine ServeurBanque;
+
+@moe:
+    @schedule
+    {| interleaving | run AutomateDAB.DAB; run ServeurBanque.Banque; }
+
+@com:
+    // Synchronisation par rendez-vous (DAB <-> Banque)
+    connect< rdv > {
+        output AutomateDAB.DAB->DemandeAuth;
+        input ServeurBanque.Banque->DemandeAuth;
+    }
+    connect< rdv > {
+        output ServeurBanque.Banque->ReponseAuth;
+        input AutomateDAB.DAB->ReponseAuth;
+    }
+    connect< rdv > {
+        output AutomateDAB.DAB->DemandeRetrait;
+        input ServeurBanque.Banque->DemandeRetrait;
+    }
+    connect< rdv > {
+        output ServeurBanque.Banque->ReponseRetrait;
+        input AutomateDAB.DAB->ReponseRetrait;
+    }
+
+    // Interaction avec l'Utilisateur (Environnement)
+    connect< env > {
+        // Entrées contrôlables
+        input AutomateDAB.DAB->InsererCarte;
+        input AutomateDAB.DAB->SaisirCode;
+        input AutomateDAB.DAB->SaisirMontant;
+        input AutomateDAB.DAB->Annuler;
+
+        // Sorties observables
+        output AutomateDAB.DAB->DemanderCode;
+        output AutomateDAB.DAB->DemanderMontant;
+        output AutomateDAB.DAB->Billets;
+        output AutomateDAB.DAB->Recu;
+        output AutomateDAB.DAB->EjecterCarte;
+        output AutomateDAB.DAB->AvalerCarte;
+        output AutomateDAB.DAB->ErreurCode;
+        output AutomateDAB.DAB->FondsInsuffisants;
+        output AutomateDAB.DAB->Temporisation;
+        output AutomateDAB.DAB->ErreurBanque;
+    }
+}
